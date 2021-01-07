@@ -1,0 +1,41 @@
+package:
+  name: metagraph-mlir
+  version: {{ environ.get('GIT_DESCRIBE_TAG', 'unknown') }}
+
+source:
+  path: ../..
+
+build:
+  number: {{ environ.get('GIT_DESCRIBE_NUMBER', 0)|int }}
+  string: py_{{GIT_DESCRIBE_HASH}}_{{ GIT_DESCRIBE_NUMBER }}
+  script: python setup.py install --single-version-externally-managed --record=record.txt
+  noarch: python
+
+requirements:
+  host:
+    - python
+
+  run:
+    - python
+    - mlir
+    - metagraph >=0.2.4
+
+test:
+  requires:
+    - pytest
+    - pytest-cov
+    - coverage
+
+  commands:
+    - pytest --pyargs metagraph_mlir.tests
+    - pytest --pyargs metagraph.tests
+
+about:
+  home: https://github.com/metagraph-dev/metagraph-mlir
+  license: Apache 2.0
+  license_family: Apache
+  license_file: LICENSE
+  summary: 'Metagraph plugin for the MLIR compiler'
+  description: |
+      Plugin for metagraph to use the MLIR compiler
+  dev_url: https://github.com/metagraph-dev/metagraph-mlir
