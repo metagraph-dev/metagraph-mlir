@@ -14,4 +14,4 @@ dependencies:
 
 # dependencies (so setup.py develop doesn't pip install them)
   - metagraph
-  
+  - metagraph-numba
