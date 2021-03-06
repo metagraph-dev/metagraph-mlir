@@ -79,6 +79,7 @@ def test_compile_wrapper(ex1):
     for i0, i1 in [(10, 6), (12, 18), (-5, 2)]:
         assert wrapper(i0, i1) == (((i0 - i1) * 2) + 5)
 
+
 @pytest.mark.xfail
 def test_compile_subgraph(dres):
     # FIXME: replace this test
@@ -134,6 +135,7 @@ def test_compile_subgraph_kwargs_error(dres):
 
     with pytest.raises(CompileError, match="offset"):
         jit_func = compiler.compile_subgraph(x.__dask_graph__(), [], x.key)
+
 
 @pytest.mark.xfail
 def test_compute(dres):

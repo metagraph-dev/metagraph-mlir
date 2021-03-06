@@ -66,7 +66,7 @@ class MLIRCompiler(Compiler):
                     "MLIRCompiler only supports functions with bound kwargs.\n"
                     f"When compiling:\n{delayed_algo.func_label}\nfound unbound kwargs:\n{kwargs}"
                 )
-            
+
             # FIXME: How should we pass args to this function?
             func_body = delayed_algo.algo.func(*args)
             tbl.register_func(key, func_body, args)
