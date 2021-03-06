@@ -6,16 +6,87 @@ from metagraph_numba.compiler import SymbolTable
 from metagraph.core.plugin import Compiler, CompileError
 from typing import Dict, List, Tuple, Callable, Hashable, Any
 from dask.core import toposort, ishashable
+from dataclasses import dataclass, field
 
 
-def construct_call_wrapper_text(
+@dataclass
+class MLIRFunc:
+    # name of function in mlir to call
+    name: str
+
+    # type signature of arguments to entrypoint (MLIR type syntax)
+    # FIXME: Should we parse this from the MLIR directly?
+    arg_types: List[str]
+
+    # type signature of return type from entrypoint (MLIR type syntax)
+    ret_type: str
+
+    # MLIR text
+    mlir: bytes
+
+
+def mlir_func_decl_arg(name, mlir_type):
+    return f"%{name}: {mlir_type}"
+
+
+def construct_call_wrapper_mlir(
     wrapper_name: str,
     symbol_table: SymbolTable,
     input_keys: List[Hashable],
     execute_keys: List[Hashable],
     output_key: Hashable,
-) -> Tuple[str, Dict[str, Any]]:
-    pass
+) -> Tuple[MLIRFunc, List]:
+    constant_sym = []
+    constant_vals = []
+    for sym, val in symbol_table.const_sym_to_value.items():
+        constant_sym.append(sym)
+        constant_vals.append(val)
+
+    func_text = ""
+
+    # wrapper arg types
+    decl_args = []
+    arg_types = []
+    for symbol_name in [
+        symbol_table.var_key_to_sym[ikey] for ikey in input_keys
+    ] + constant_sym:
+        symbol_type = symbol_table.sym_to_type[symbol_name]
+        decl_args.append(mlir_func_decl_arg(symbol_name, symbol_type))
+        arg_types.append(symbol_type)
+
+    # wrapper return type
+    out_func_sym = symbol_table.func_key_to_sym[output_key]
+    out_ret_sym = symbol_table.func_sym_to_ret_sym[out_func_sym]
+    decl_ret_type = symbol_table.sym_to_type[out_ret_sym]
+
+    # call signature
+    func_text += (
+        f"func @{wrapper_name}(" + ", ".join(decl_args) + f") -> {decl_ret_type} " "{\n"
+    )
+
+    # body
+    for ekey in execute_keys:
+        func_sym = symbol_table.func_key_to_sym[ekey]
+        ret_sym = symbol_table.func_sym_to_ret_sym[func_sym]
+        args_sym = symbol_table.func_sym_to_args_sym[func_sym]
+        func_text += (
+            f"  %{ret_sym} = call @{func_sym}("
+            + ", ".join(["%" + s for s in args_sym])
+            + ") : "
+        )
+        func_text += (
+            "(" + ", ".join([symbol_table.sym_to_type[s] for s in args_sym]) + ") -> "
+        )
+        func_text += symbol_table.sym_to_type[ret_sym] + "\n"
+    func_text += "\n"
+
+    # return value
+    func_text += f"  return %{out_ret_sym} : {decl_ret_type}" "\n}\n"
+
+    mlir_func = MLIRFunc(
+        name=wrapper_name, arg_types=arg_types, ret_type=decl_ret_type, mlir=func_text
+    )
+    return mlir_func, constant_vals
 
 
 def compile_wrapper(

@@ -10,9 +10,10 @@ from dask import delayed
 import numpy as np
 from metagraph.tests.util import default_plugin_resolver
 from metagraph_mlir.compiler import (
+    MLIRFunc,
     MLIRCompiler,
     SymbolTable,
-    construct_call_wrapper_text,
+    construct_call_wrapper_mlir,
     compile_wrapper,
 )
 
@@ -29,11 +30,10 @@ def test_compile_algorithm(res):
     np.testing.assert_array_equal(ret, a * 4.0)
 
 
-@pytest.mark.xfail
-def test_construct_call_wrapper_text(ex1):
+def test_construct_call_wrapper_mlir(ex1):
     # FIXME: replace this test
     tbl, (algo0, algo1) = ex1
-    text, wrapper_globals = construct_call_wrapper_text(
+    wrapper_func, constant_vals = construct_call_wrapper_mlir(
         wrapper_name="subgraph0",
         symbol_table=tbl,
         input_keys=["input0", "input1"],
@@ -41,26 +41,19 @@ def test_construct_call_wrapper_text(ex1):
         output_key="algo1",
     )
 
-    expected_text = """\
-def subgraph0(var0, var1):
-    global const0
-    global const1
-    global func0
-    global func1
+    expected_mlir = """\
+func @subgraph0(%var0: tensor<?xf32>, %var1: tensor<?xf64>, %const0: i32, %const1: i32) -> tensor<?xf32> {
+  %ret0 = call @func0(%var0, %var1, %const0) : (tensor<?xf32>, tensor<?xf64>, i32) -> tensor<?x?xf32>
+  %ret1 = call @func1(%ret0, %const1) : (tensor<?x?xf32>, i32) -> tensor<?xf32>
 
-    ret0 = func0(var0, var1, const0)
-    ret1 = func1(ret0, const1)
-
-    return ret1
+  return %ret1 : tensor<?xf32>
+}
 """
-    expected_globals = {
-        "const0": 2,
-        "const1": 5,
-        "func0": algo0,
-        "func1": algo1,
-    }
-    assert expected_text == text
-    assert expected_globals == wrapper_globals
+    assert wrapper_func.name == "subgraph0"
+    assert wrapper_func.arg_types == ["tensor<?xf32>", "tensor<?xf64>", "i32", "i32"]
+    assert wrapper_func.ret_type == "tensor<?xf32>"
+    assert wrapper_func.mlir == expected_mlir
+    assert constant_vals == [2, 5]
 
 
 @pytest.mark.xfail
@@ -151,6 +144,32 @@ def test_compute(dres):
 
 
 @pytest.fixture
+def ex1():
+    tbl = SymbolTable()
+    tbl.register_var("input0", type="tensor<?xf32>")
+    tbl.register_var("input1", type="tensor<?xf64>")
+
+    algo0 = lambda x, y, z: (x - y) * z
+    algo1 = lambda x, y: x + y
+    tbl.register_func(
+        "algo0",
+        algo0,
+        ["input0", "input1", 2],
+        arg_types=["tensor<?xf32>", "tensor<?xf64>", "i32"],
+        ret_type="tensor<?x?xf32>",
+    )
+    tbl.register_func(
+        "algo1",
+        algo1,
+        ["algo0", 5],
+        arg_types=["tensor<?x?xf32>", "i32"],
+        ret_type="tensor<?xf32>",
+    )
+
+    return tbl, (algo0, algo1)
+
+
+@pytest.fixture
 def res():
     from metagraph.plugins.core.types import Vector
     from metagraph.plugins.numpy.types import NumpyVectorType
@@ -163,7 +182,33 @@ def res():
     def compiled_add(
         a: NumpyVectorType, b: NumpyVectorType
     ) -> NumpyVectorType:  # pragma: no cover
-        raise CompileError("TODO")
+        return MLIRFunc(
+            entrypoint="testing_add",
+            arg_types=["tensor<?xf32>", "tensor<?xf32>"],
+            ret_type="tensor<?xf32>",
+            mlir=b"""\
+#trait_testing_add = {
+  indexing_maps = [
+    affine_map<(i) -> (i)>,  // A
+    affine_map<(i) -> (i)>,  // B
+    affine_map<(i) -> (i)>   // X (out)
+  ],
+  iterator_types = ["parallel"],
+  doc = "X(i) = A(i) OP B(i)"
+}
+
+func @testing_add(%arga: tensor<?xf32>, %argb: tensor<?xf32>) -> tensor<?xf32> {
+  %0 = linalg.generic #trait_testing_add
+     ins(%arga, %argb: tensor<?xf32>, tensor<?xf32>)
+    outs(%arga: tensor<?xf32>) {
+      ^bb(%a: f32, %b: f32, %s: f32):
+        %0 = addf %a, %b  : f32
+        linalg.yield %0 : f32
+  } -> tensor<?xf32>
+  return %0 : tensor<?xf32>
+}
+""",
+        )
 
     @abstract_algorithm("testing.scale")
     def testing_scale(a: Vector, scale: float) -> Vector:  # pragma: no cover
@@ -173,7 +218,32 @@ def res():
     def compiled_scale(
         a: NumpyVectorType, scale: float
     ) -> NumpyVectorType:  # pragma: no cover
-        raise CompileError("TODO")
+        return MLIRFunc(
+            entrypoint="testing_scale",
+            arg_types=["tensor<?xf32>", "f32"],
+            ret_type="tensor<?xf32>",
+            mlir="""\
+#trait_testing_scale = {
+  indexing_maps = [
+    affine_map<(i) -> (i)>,  // A
+    affine_map<(i) -> (i)>   // X (out)
+  ],
+  iterator_types = ["parallel"],
+  doc = "X(i) = A(i) OP Scalar"
+}
+
+func @scale_func(%input: tensor<?xf32>, %scale: f32) -> tensor<?xf32> {
+  %0 = linalg.generic #trait_testing_scale
+     ins(%input: tensor<?xf32>)
+     outs(%input: tensor<?xf32>) {
+      ^bb(%a: f32, %s: f32):
+        %0 = mulf %a, %scale  : f32
+        linalg.yield %0 : f32
+  } -> tensor<?xf32>
+  return %0 : tensor<?xf32>
+}
+""",
+        )
 
     @abstract_algorithm("testing.offset")
     def testing_offset(a: Vector, *, offset: float) -> Vector:  # pragma: no cover
@@ -183,7 +253,32 @@ def res():
     def compiled_offset(
         a: NumpyVectorType, *, offset: float
     ) -> NumpyVectorType:  # pragma: no cover
-        raise CompileError("TODO")
+        return MLIRFunc(
+            entrypoint="testing_offset",
+            arg_types=["tensor<?xf32>", "f32"],
+            ret_type="tensor<?xf32>",
+            mlir=b"""\
+#trait_testing_offset = {
+  indexing_maps = [
+    affine_map<(i) -> (i)>,  // A
+    affine_map<(i) -> (i)>   // X (out)
+  ],
+  iterator_types = ["parallel"],
+  doc = "X(i) = A(i) OP Scalar"
+}
+
+func @testing_offset(%input: tensor<?xf32>, %offset: f32) -> tensor<?xf32> {
+  %0 = linalg.generic #trait_testing_offset
+     ins(%input: tensor<?xf32>)
+     outs(%input: tensor<?xf32>) {
+      ^bb(%a: f32, %s: f32):
+        %0 = addf %a, %offset  : f32
+        linalg.yield %0 : f32
+  } -> tensor<?xf32>
+  return %0 : tensor<?xf32>
+}
+""",
+        )
 
     registry = PluginRegistry("test_subgraphs_plugin")
     registry.register(testing_add)
