@@ -42,9 +42,23 @@ def test_construct_call_wrapper_mlir(ex1):
     )
 
     expected_mlir = """\
+func @algo0(%arga: tensor<?xf32>, %argb: tensor<?xf64>, %argc: i32) -> tensor<?x?xf32> {
+  %f0 = constant 0.0: f32
+  %0 = splat %f0 : tensor<8x16xf32>
+  %1 = tensor.cast %0 : tensor<8x16xf32> to tensor<?x?xf32>
+  return %1 : tensor<?x?xf32>
+}
+
+func @algo1(%arga: tensor<?x?xf32>, %argb: i32) -> tensor<?xf32> {
+  %f0 = constant 0.0: f32
+  %0 = splat %f0 : tensor<8xf32>
+  %1 = tensor.cast %0 : tensor<8xf32> to tensor<?xf32>
+  return %1 : tensor<?xf32>
+}
+
 func @subgraph0(%var0: tensor<?xf32>, %var1: tensor<?xf64>, %const0: i32, %const1: i32) -> tensor<?xf32> {
-  %ret0 = call @func0(%var0, %var1, %const0) : (tensor<?xf32>, tensor<?xf64>, i32) -> tensor<?x?xf32>
-  %ret1 = call @func1(%ret0, %const1) : (tensor<?x?xf32>, i32) -> tensor<?xf32>
+  %ret0 = call @algo0(%var0, %var1, %const0) : (tensor<?xf32>, tensor<?xf64>, i32) -> tensor<?x?xf32>
+  %ret1 = call @algo1(%ret0, %const1) : (tensor<?x?xf32>, i32) -> tensor<?xf32>
 
   return %ret1 : tensor<?xf32>
 }
@@ -149,8 +163,34 @@ def ex1():
     tbl.register_var("input0", type="tensor<?xf32>")
     tbl.register_var("input1", type="tensor<?xf64>")
 
-    algo0 = lambda x, y, z: (x - y) * z
-    algo1 = lambda x, y: x + y
+    algo0 = MLIRFunc(
+        name="algo0",
+        arg_types=["tensor<?xf32>", "tensor<?xf64>", "i32"],
+        ret_type="tensor<?x?xf32>",
+        mlir="""\
+func @algo0(%arga: tensor<?xf32>, %argb: tensor<?xf64>, %argc: i32) -> tensor<?x?xf32> {
+  %f0 = constant 0.0: f32
+  %0 = splat %f0 : tensor<8x16xf32>
+  %1 = tensor.cast %0 : tensor<8x16xf32> to tensor<?x?xf32>
+  return %1 : tensor<?x?xf32>
+}
+""",
+    )
+
+    algo1 = MLIRFunc(
+        name="algo1",
+        arg_types=["tensor<?x?xf32>", "i32"],
+        ret_type="tensor<?xf32>",
+        mlir="""\
+func @algo1(%arga: tensor<?x?xf32>, %argb: i32) -> tensor<?xf32> {
+  %f0 = constant 0.0: f32
+  %0 = splat %f0 : tensor<8xf32>
+  %1 = tensor.cast %0 : tensor<8xf32> to tensor<?xf32>
+  return %1 : tensor<?xf32>
+}
+""",
+    )
+
     tbl.register_func(
         "algo0",
         algo0,

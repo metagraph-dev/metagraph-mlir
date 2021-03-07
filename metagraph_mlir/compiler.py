@@ -7,6 +7,7 @@ from metagraph.core.plugin import Compiler, CompileError
 from typing import Dict, List, Tuple, Callable, Hashable, Any
 from dask.core import toposort, ishashable
 from dataclasses import dataclass, field
+from .adapters import AdapterRegistry, get_default_adapters
 
 
 @dataclass
@@ -36,6 +37,7 @@ def construct_call_wrapper_mlir(
     execute_keys: List[Hashable],
     output_key: Hashable,
 ) -> Tuple[MLIRFunc, List]:
+
     constant_sym = []
     constant_vals = []
     for sym, val in symbol_table.const_sym_to_value.items():
@@ -43,6 +45,7 @@ def construct_call_wrapper_mlir(
         constant_vals.append(val)
 
     func_text = ""
+    func_definitions = {}
 
     # wrapper arg types
     decl_args = []
@@ -69,19 +72,36 @@ def construct_call_wrapper_mlir(
         func_sym = symbol_table.func_key_to_sym[ekey]
         ret_sym = symbol_table.func_sym_to_ret_sym[func_sym]
         args_sym = symbol_table.func_sym_to_args_sym[func_sym]
+        func_impl = symbol_table.func_sym_to_func[func_sym]
+
+        # save this function to be emitted with wrapper
+        # key by function name to remove duplication of repeat functions
+        func_definitions[func_impl.name] = func_impl.mlir
+
+        # compute function type signature
+        func_sig = (
+            "("
+            + ", ".join([symbol_table.sym_to_type[s] for s in args_sym])
+            + ") -> "
+            + symbol_table.sym_to_type[ret_sym]
+        )
+
+        # Use actual function name, rather than symbol assigned by symbol table
         func_text += (
-            f"  %{ret_sym} = call @{func_sym}("
+            f"  %{ret_sym} = call @{func_impl.name}("
             + ", ".join(["%" + s for s in args_sym])
-            + ") : "
+            + f") : {func_sig}"
+            "\n"
         )
-        func_text += (
-            "(" + ", ".join([symbol_table.sym_to_type[s] for s in args_sym]) + ") -> "
-        )
-        func_text += symbol_table.sym_to_type[ret_sym] + "\n"
+
     func_text += "\n"
 
     # return value
     func_text += f"  return %{out_ret_sym} : {decl_ret_type}" "\n}\n"
+
+    # prepend function definitons
+    func_def_text = "\n".join(d for d in func_definitions.values())
+    func_text = func_def_text + "\n" + func_text
 
     mlir_func = MLIRFunc(
         name=wrapper_name, arg_types=arg_types, ret_type=decl_ret_type, mlir=func_text
@@ -89,16 +109,63 @@ def construct_call_wrapper_mlir(
     return mlir_func, constant_vals
 
 
+class MLIRWrapper:
+    def __init__(
+        self,
+        adapter_registry: AdapterRegistry,
+        ctypes_func,
+        mlir_func: MLIRFunc,
+        const_values: List[Any],
+    ):
+        """Python callable that wraps an MLIR function
+
+        Assumes that arg list is ordered such that Python args come first,
+        then compile time constants.  That is, __call__ will be called with
+        len(mlir_func.arg_types) - len(const_values) arguments.
+        """
+        self.ctypes_func = ctypes_func
+        self.mlir_func = mlir_func
+        self.const_values = List[Any]
+        self._iarg_const = len(mlir_func.arg_types) - len(const_values)
+
+        self._arg_adapters = [
+            adapter_registry.search_by_mlir_type(mlir_func.arg_types[iarg])
+            for iarg in range(self._iarg_const)
+        ]
+
+        self._ret_adapter = adapter_registry.search_by_mlir_type(mlir_func.ret_type)
+
+    def __call__(*args, **kwargs):
+        if len(kwargs) > 0:
+            raise ValueError("MLIRWrapper does not support kwargs")
+
+        args = [a.unbox(v) for a, v in zip(self.arg_adapters, args[: self._iarg_const])]
+        args += self._const_unboxed
+
+        ret = self.ctypes_func(*args)
+        return self._ret_adapter.box(ret)
+
+
 def compile_wrapper(
-    wrapper_name: str, wrapper_text: str, wrapper_globals: Dict[str, Any]
+    engine,
+    adapter_registry: AdapterRegistry,
+    mlir_func: MLIRFunc,
+    constant_vals: List[Any],
 ) -> Callable:
-    pass
+    ctypes_func = engine.compile(mlir_func)
+
+    wrapper = MLIRWrapper(adapter_registry, ctypes_func, mlir_func, constant_vals)
+
+    return wrapper
 
 
 class MLIRCompiler(Compiler):
     def __init__(self, name="mlir"):
         super().__init__(name=name)
         self._subgraph_count = 0
+        self._adapter_registry = get_default_adapters()
+        # FIXME: add engine!
+        self._engine = None
 
     def compile_algorithm(self, algo, literals):
         """Wrap a single function for JIT compilation and execution.
@@ -138,14 +205,13 @@ class MLIRCompiler(Compiler):
                     f"When compiling:\n{delayed_algo.func_label}\nfound unbound kwargs:\n{kwargs}"
                 )
 
-            # FIXME: How should we pass args to this function?
-            func_body = delayed_algo.algo.func(*args)
-            tbl.register_func(key, func_body, args)
+            mlir_func = delayed_algo.algo.func(*args)
+            tbl.register_func(key, mlir_func, args)
 
         # generate the wrapper
         subgraph_wrapper_name = "subgraph" + str(self._subgraph_count)
         self._subgraph_count += 1
-        wrapper_text, wrapper_globals = construct_call_wrapper_text(
+        mlir_func, constant_vals = construct_call_wrapper_mlir(
             wrapper_name=subgraph_wrapper_name,
             symbol_table=tbl,
             input_keys=inputs,
@@ -154,6 +220,7 @@ class MLIRCompiler(Compiler):
         )
 
         wrapper_func = compile_wrapper(
-            subgraph_wrapper_name, wrapper_text, wrapper_globals
+            self.engine, self.adapter_registry, mlir_func, constant_vals
         )
-        pass
+
+        return wrapper_func
