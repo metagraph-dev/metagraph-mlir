@@ -7,7 +7,7 @@ from metagraph.core.plugin import Compiler, CompileError
 from typing import Dict, List, Tuple, Callable, Hashable, Any
 from dask.core import toposort, ishashable
 from dataclasses import dataclass, field
-from .adapters import AdapterRegistry, get_default_adapters
+import numba
 
 
 @dataclass
@@ -112,7 +112,7 @@ def construct_call_wrapper_mlir(
 class MLIRWrapper:
     def __init__(
         self,
-        adapter_registry: AdapterRegistry,
+        adapter_registry: "AdapterRegistry",
         ctypes_func,
         mlir_func: MLIRFunc,
         const_values: List[Any],
@@ -125,7 +125,7 @@ class MLIRWrapper:
         """
         self.ctypes_func = ctypes_func
         self.mlir_func = mlir_func
-        self.const_values = List[Any]
+        self.const_values = const_values
         self._iarg_const = len(mlir_func.arg_types) - len(const_values)
 
         self._arg_adapters = [
@@ -133,27 +133,51 @@ class MLIRWrapper:
             for iarg in range(self._iarg_const)
         ]
 
+        const_unboxed = []
+        for const_value in self.const_values:
+            adapter = adapter_registry.search_by_numba_type(numba.typeof(const_value))
+            const_unboxed.extend(adapter.unbox(const_value))  # unbox returns a list!
+        self._const_unboxed = const_unboxed
+
         self._ret_adapter = adapter_registry.search_by_mlir_type(mlir_func.ret_type)
 
-    def __call__(*args, **kwargs):
+    def __call__(self, *args, **kwargs):
         if len(kwargs) > 0:
             raise ValueError("MLIRWrapper does not support kwargs")
 
-        args = [a.unbox(v) for a, v in zip(self.arg_adapters, args[: self._iarg_const])]
+        args = []
+        for a, v in zip(self._arg_adapters, args[: self._iarg_const]):
+            args.extend(a.unbox(v))
         args += self._const_unboxed
 
         ret = self.ctypes_func(*args)
         return self._ret_adapter.box(ret)
 
 
+# FIXME: These should be configurable with donfig
+STANDARD_OPT_PASSES = [
+    "--linalg-bufferize",
+    "--func-bufferize",
+    "--finalizing-bufferize",
+    "--convert-linalg-to-affine-loops",
+    "--inline",
+    "--affine-loop-fusion=fusion-maximal",
+    "--memref-dataflow-opt",
+    "--lower-affine",
+    "--convert-scf-to-std",
+    "--convert-std-to-llvm",
+]
+
+
 def compile_wrapper(
     engine,
-    adapter_registry: AdapterRegistry,
+    adapter_registry: "AdapterRegistry",
     mlir_func: MLIRFunc,
     constant_vals: List[Any],
 ) -> Callable:
-    ctypes_func = engine.compile(mlir_func)
 
+    engine.add(mlir_func.mlir, passes=STANDARD_OPT_PASSES)
+    ctypes_func = engine[mlir_func.name]
     wrapper = MLIRWrapper(adapter_registry, ctypes_func, mlir_func, constant_vals)
 
     return wrapper
@@ -163,9 +187,20 @@ class MLIRCompiler(Compiler):
     def __init__(self, name="mlir"):
         super().__init__(name=name)
         self._subgraph_count = 0
-        self._adapter_registry = get_default_adapters()
-        # FIXME: add engine!
+        self._initialized = False
+        self._adapter_registry = None
         self._engine = None
+
+    def initialize_runtime(self):
+        from mlir_graphblas import MlirJitEngine
+
+        self._engine = MlirJitEngine()
+
+        from .adapters import get_default_adapters
+
+        self._adapter_registry = get_default_adapters()
+
+        self._initialized = True
 
     def compile_algorithm(self, algo, literals):
         """Wrap a single function for JIT compilation and execution.
@@ -182,6 +217,9 @@ class MLIRCompiler(Compiler):
         It is assumed that the function will be called with values corresponding to
         `inputs` in the order they are given.
         """
+        if not self._initialized:
+            self.initialize_runtime()
+
         tbl = SymbolTable()
 
         # must populate the symbol table in toposort order
@@ -206,7 +244,13 @@ class MLIRCompiler(Compiler):
                 )
 
             mlir_func = delayed_algo.algo.func(*args)
-            tbl.register_func(key, mlir_func, args)
+            tbl.register_func(
+                key,
+                mlir_func,
+                args,
+                arg_types=mlir_func.arg_types,
+                ret_type=mlir_func.ret_type,
+            )
 
         # generate the wrapper
         subgraph_wrapper_name = "subgraph" + str(self._subgraph_count)
@@ -220,7 +264,7 @@ class MLIRCompiler(Compiler):
         )
 
         wrapper_func = compile_wrapper(
-            self.engine, self.adapter_registry, mlir_func, constant_vals
+            self._engine, self._adapter_registry, mlir_func, constant_vals
         )
 
         return wrapper_func

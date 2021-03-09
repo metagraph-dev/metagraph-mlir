@@ -87,10 +87,8 @@ def test_compile_wrapper(ex1):
         assert wrapper(i0, i1) == (((i0 - i1) * 2) + 5)
 
 
-@pytest.mark.xfail
 def test_compile_subgraph(dres):
-    # FIXME: replace this test
-    a = np.arange(100)
+    a = np.arange(100, dtype=np.float32)
     scale_func = dres.algos.testing.scale
     x = scale_func(a, 2.0)
     y = scale_func(x, 3.0)
@@ -223,7 +221,7 @@ def res():
         a: NumpyVectorType, b: NumpyVectorType
     ) -> NumpyVectorType:  # pragma: no cover
         return MLIRFunc(
-            entrypoint="testing_add",
+            name="testing_add",
             arg_types=["tensor<?xf32>", "tensor<?xf32>"],
             ret_type="tensor<?xf32>",
             mlir=b"""\
@@ -259,7 +257,7 @@ func @testing_add(%arga: tensor<?xf32>, %argb: tensor<?xf32>) -> tensor<?xf32> {
         a: NumpyVectorType, scale: float
     ) -> NumpyVectorType:  # pragma: no cover
         return MLIRFunc(
-            entrypoint="testing_scale",
+            name="testing_scale",
             arg_types=["tensor<?xf32>", "f32"],
             ret_type="tensor<?xf32>",
             mlir="""\
@@ -272,7 +270,7 @@ func @testing_add(%arga: tensor<?xf32>, %argb: tensor<?xf32>) -> tensor<?xf32> {
   doc = "X(i) = A(i) OP Scalar"
 }
 
-func @scale_func(%input: tensor<?xf32>, %scale: f32) -> tensor<?xf32> {
+func @testing_scale(%input: tensor<?xf32>, %scale: f32) -> tensor<?xf32> {
   %0 = linalg.generic #trait_testing_scale
      ins(%input: tensor<?xf32>)
      outs(%input: tensor<?xf32>) {
@@ -294,7 +292,7 @@ func @scale_func(%input: tensor<?xf32>, %scale: f32) -> tensor<?xf32> {
         a: NumpyVectorType, *, offset: float
     ) -> NumpyVectorType:  # pragma: no cover
         return MLIRFunc(
-            entrypoint="testing_offset",
+            name="testing_offset",
             arg_types=["tensor<?xf32>", "f32"],
             ret_type="tensor<?xf32>",
             mlir=b"""\

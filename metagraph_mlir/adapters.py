@@ -3,6 +3,7 @@ import ctypes
 import mlir
 import numpy as np
 import numba.types as nbtypes
+import lark
 
 
 class Adapter:
@@ -59,7 +60,7 @@ class AdapterRegistry:
         return self.search_by_numba_type(numba.typeof(python_value))
 
     def search_by_numba_type(self, numba_type: nbtypes.Type) -> Adapter:
-        adapter = self._numba_typemap.get(python_type, None)
+        adapter = self._numba_typemap.get(numba_type, None)
         if adapter is not None:
             return adapter
 
@@ -68,7 +69,7 @@ class AdapterRegistry:
             if adapter is not None:
                 return adapter
 
-        raise TypeError(f"Unable to find adapter for Numba type {python_type}")
+        raise TypeError(f"Unable to find adapter for Numba type {numba_type}")
 
     def search_by_mlir_type(self, mlir_type: str) -> Adapter:
         adapter = self._mlir_typemap.get(mlir_type, None)
@@ -80,7 +81,7 @@ class AdapterRegistry:
             if adapter is not None:
                 return adapter
 
-        raise TypeError(f"Unable to find adapter for MLIR type {python_type}")
+        raise TypeError(f"Unable to find adapter for MLIR type {mlir_type}")
 
 
 ###### Default adapter registry ######
@@ -98,8 +99,9 @@ class ScalarAdapter(Adapter):
         return self.python_cast(mlir_value.value)
 
     def unbox(self, python_value) -> List[Any]:
+        return [python_value]
         # Scalars always unbox to single value
-        return [self.ctypes_type(python_value)]
+        # return [self.ctypes_type(python_value)]
 
 
 class ArrayAdapter(Adapter):
@@ -115,8 +117,8 @@ class ArrayAdapter(Adapter):
                 ("base", ctypes.POINTER(ctypes_element_type)),
                 ("offset", ctypes_index_type),
             ]
-            + [(f"size{d}", ctypes_index_type) for d in range(dims)]
-            + [(f"stride{d}", ctypes_index_type) for d in range(dims)]
+            + [(f"size{d}", ctypes_index_type) for d in range(ndims)]
+            + [(f"stride{d}", ctypes_index_type) for d in range(ndims)]
         )
 
         class ReturnType(ctypes.Structure):
@@ -125,6 +127,8 @@ class ArrayAdapter(Adapter):
         self.ctypes_struct_type = ReturnType
 
     def box(self, mlir_value):
+        return mlir_value
+        # FIXME: redundant with MlirJitEngine
         # FIXME: Does not handle strides or memory lifetime yet!  Need cython!
         shape = []
         nelements = 1
@@ -141,6 +145,8 @@ class ArrayAdapter(Adapter):
         return ret
 
     def unbox(self, python_value):
+        # FIXME: MlirJitEngine is doing the unpacking already
+        return [python_value]
         # assume that function signature is using np.ctypeslib.ndpointer
         itemsize = python_value.itemsize
         args = (
@@ -162,7 +168,7 @@ class MLIRTypeParser:
     def parse(self, mlir_type):
         try:
             parsed_type = self._lark_parser.parse(mlir_type, "type")
-            node = self._mlir_transformer(parsed_type)
+            node = self._mlir_transformer.transform(parsed_type)
             return node
         except lark.UnexpectedInput:
             return None
@@ -181,16 +187,17 @@ class ArrayGenerator(AdapterGenerator):
         if isinstance(numba_type, nbtypes.Array):
             element_type = numba_type.dtype  # not NumPy dtype
             scalar_adapter = self._scalar_registry.search_by_numba_type(element_type)
-
             if scalar_adapter is None:
                 return None
 
             adapter = ArrayAdapter(
                 dtype=scalar_adapter.dtype,
-                ndims=ndims,
+                ndims=numba_type.ndim,
                 ctypes_element_type=scalar_adapter.ctypes_type,
                 ctypes_index_type=ctypes.c_int64,
             )
+
+            return adapter
         else:
             return None
 
@@ -214,6 +221,7 @@ class ArrayGenerator(AdapterGenerator):
                 ctypes_element_type=scalar_adapter.ctypes_type,
                 ctypes_index_type=ctypes.c_int64,
             )
+            return adapter
         else:
             return None
 
