@@ -1,0 +1,29 @@
+name: mg
+dependencies:
+# dev environment
+  - python=3.8
+  - coverage
+  - pytest
+  - pytest-cov
+  - black
+  - conda-forge::pre-commit
+
+# documentation
+  - sphinx=3.0.4
+  - nbsphinx
+  - notebook
+  - conda-forge::pydata-sphinx-theme
+  - matplotlib
+  - pip
+  - pip:
+    - rst2pdf
+    - nest_asyncio
+
+# dependencies (so setup.py develop doesn't pip install them)
+  - metagraph::metagraph
+  - metagraph::mlir
+  - metagraph::pymlir
+  - metagraph::mlir-graphblas
+  - scipy
+  - cython
+  - numpy>=1.20
