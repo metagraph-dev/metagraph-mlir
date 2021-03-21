@@ -7,7 +7,7 @@ from metagraph.core.plugin import Compiler, CompileError
 from typing import Dict, List, Tuple, Callable, Hashable, Any
 from dask.core import toposort, ishashable
 from dataclasses import dataclass, field
-import numba
+import inspect
 
 
 @dataclass
@@ -175,7 +175,48 @@ class MLIRCompiler(Compiler):
         
         literals is not used for anything currently
         """
-        raise CompileError("Not implemented")
+        if not self._initialized:
+            self.initialize_runtime()
+
+        # We generate a wrapper for a single algo because algos
+        # are currently marked as "private" functions, which will
+        # be optimized away by MLIR unless something is calling them
+
+        tbl = SymbolTable()
+
+        sig = inspect.signature(algo.func)
+        args = []
+        input_keys = []
+        for argname, arg in sig.parameters.items():
+            tbl.register_var(argname)
+            input_keys.append(argname)
+            args.append(arg.annotation)
+
+        # the arguments to the func are not used for anything yet. Could be
+        # used in future to pass types and literals for codegen, like
+        # numba.overload decorator
+        mlir_func = algo.func(*args)
+        tbl.register_func(
+            mlir_func.name,
+            mlir_func,
+            input_keys,
+            arg_types=mlir_func.arg_types,
+            ret_type=mlir_func.ret_type,
+        )
+
+        # generate the wrapper
+        subgraph_wrapper_name = "algo_call" + str(self._subgraph_count)
+        self._subgraph_count += 1
+        mlir_func, constant_vals = construct_call_wrapper_mlir(
+            wrapper_name=subgraph_wrapper_name,
+            symbol_table=tbl,
+            input_keys=input_keys,
+            execute_keys=[mlir_func.name],
+            output_key=mlir_func.name,
+        )
+
+        wrapper_func = compile_wrapper(self._engine, mlir_func, constant_vals)
+        return wrapper_func
 
     def compile_subgraph(
         self, subgraph: Dict, inputs: List[Hashable], output: Hashable

@@ -22,9 +22,7 @@ def test_register(default_plugin_resolver):
     assert "mlir" in default_plugin_resolver.compilers
 
 
-@pytest.mark.xfail
 def test_compile_algorithm(res):
-    # FIXME: replace this test
     a = np.arange(100, dtype=np.float32)
     ret = res.algos.testing.scale(a, 4.0)
     np.testing.assert_array_equal(ret, a * 4.0)
