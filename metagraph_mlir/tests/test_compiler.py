@@ -235,7 +235,7 @@ def res():
   doc = "X(i) = A(i) OP B(i)"
 }
 
-func @testing_add(%arga: tensor<?xf32>, %argb: tensor<?xf32>) -> tensor<?xf32> {
+func private @testing_add(%arga: tensor<?xf32>, %argb: tensor<?xf32>) -> tensor<?xf32> {
   %0 = linalg.generic #trait_testing_add
      ins(%arga, %argb: tensor<?xf32>, tensor<?xf32>)
     outs(%arga: tensor<?xf32>) {
@@ -270,7 +270,7 @@ func @testing_add(%arga: tensor<?xf32>, %argb: tensor<?xf32>) -> tensor<?xf32> {
   doc = "X(i) = A(i) OP Scalar"
 }
 
-func @testing_scale(%input: tensor<?xf32>, %scale: f32) -> tensor<?xf32> {
+func private @testing_scale(%input: tensor<?xf32>, %scale: f32) -> tensor<?xf32> {
   %0 = linalg.generic #trait_testing_scale
      ins(%input: tensor<?xf32>)
      outs(%input: tensor<?xf32>) {
@@ -305,7 +305,7 @@ func @testing_scale(%input: tensor<?xf32>, %scale: f32) -> tensor<?xf32> {
   doc = "X(i) = A(i) OP Scalar"
 }
 
-func @testing_offset(%input: tensor<?xf32>, %offset: f32) -> tensor<?xf32> {
+func private @testing_offset(%input: tensor<?xf32>, %offset: f32) -> tensor<?xf32> {
   %0 = linalg.generic #trait_testing_offset
      ins(%input: tensor<?xf32>)
      outs(%input: tensor<?xf32>) {

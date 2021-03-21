@@ -25,6 +25,9 @@ class MLIRFunc:
     # MLIR text
     mlir: bytes
 
+    # Full, compiled function wrapped for calling from Python
+    callable: Callable = None
+
 
 def mlir_func_decl_arg(name, mlir_type):
     return f"%{name}: {mlir_type}"
@@ -111,11 +114,7 @@ def construct_call_wrapper_mlir(
 
 class MLIRWrapper:
     def __init__(
-        self,
-        adapter_registry: "AdapterRegistry",
-        ctypes_func,
-        mlir_func: MLIRFunc,
-        const_values: List[Any],
+        self, mlir_func: MLIRFunc, const_values: List[Any],
     ):
         """Python callable that wraps an MLIR function
 
@@ -123,35 +122,15 @@ class MLIRWrapper:
         then compile time constants.  That is, __call__ will be called with
         len(mlir_func.arg_types) - len(const_values) arguments.
         """
-        self.ctypes_func = ctypes_func
         self.mlir_func = mlir_func
         self.const_values = const_values
-        self._iarg_const = len(mlir_func.arg_types) - len(const_values)
-
-        self._arg_adapters = [
-            adapter_registry.search_by_mlir_type(mlir_func.arg_types[iarg])
-            for iarg in range(self._iarg_const)
-        ]
-
-        const_unboxed = []
-        for const_value in self.const_values:
-            adapter = adapter_registry.search_by_numba_type(numba.typeof(const_value))
-            const_unboxed.extend(adapter.unbox(const_value))  # unbox returns a list!
-        self._const_unboxed = const_unboxed
-
-        self._ret_adapter = adapter_registry.search_by_mlir_type(mlir_func.ret_type)
 
     def __call__(self, *args, **kwargs):
         if len(kwargs) > 0:
             raise ValueError("MLIRWrapper does not support kwargs")
 
-        args = []
-        for a, v in zip(self._arg_adapters, args[: self._iarg_const]):
-            args.extend(a.unbox(v))
-        args += self._const_unboxed
-
-        ret = self.ctypes_func(*args)
-        return self._ret_adapter.box(ret)
+        all_args = list(args) + self.const_values
+        return self.mlir_func.callable(*all_args)
 
 
 # FIXME: These should be configurable with donfig
@@ -169,16 +148,11 @@ STANDARD_OPT_PASSES = [
 ]
 
 
-def compile_wrapper(
-    engine,
-    adapter_registry: "AdapterRegistry",
-    mlir_func: MLIRFunc,
-    constant_vals: List[Any],
-) -> Callable:
+def compile_wrapper(engine, mlir_func: MLIRFunc, constant_vals: List[Any],) -> Callable:
 
     engine.add(mlir_func.mlir, passes=STANDARD_OPT_PASSES)
-    ctypes_func = engine[mlir_func.name]
-    wrapper = MLIRWrapper(adapter_registry, ctypes_func, mlir_func, constant_vals)
+    mlir_func.callable = engine[mlir_func.name]
+    wrapper = MLIRWrapper(mlir_func, constant_vals)
 
     return wrapper
 
@@ -188,18 +162,12 @@ class MLIRCompiler(Compiler):
         super().__init__(name=name)
         self._subgraph_count = 0
         self._initialized = False
-        self._adapter_registry = None
         self._engine = None
 
     def initialize_runtime(self):
         from mlir_graphblas import MlirJitEngine
 
         self._engine = MlirJitEngine()
-
-        from .adapters import get_default_adapters
-
-        self._adapter_registry = get_default_adapters()
-
         self._initialized = True
 
     def compile_algorithm(self, algo, literals):
@@ -263,8 +231,6 @@ class MLIRCompiler(Compiler):
             output_key=output,
         )
 
-        wrapper_func = compile_wrapper(
-            self._engine, self._adapter_registry, mlir_func, constant_vals
-        )
+        wrapper_func = compile_wrapper(self._engine, mlir_func, constant_vals)
 
         return wrapper_func
