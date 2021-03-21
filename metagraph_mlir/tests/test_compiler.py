@@ -25,7 +25,7 @@ def test_register(default_plugin_resolver):
 @pytest.mark.xfail
 def test_compile_algorithm(res):
     # FIXME: replace this test
-    a = np.arange(100)
+    a = np.arange(100, dtype=np.float32)
     ret = res.algos.testing.scale(a, 4.0)
     np.testing.assert_array_equal(ret, a * 4.0)
 
@@ -70,23 +70,6 @@ func @subgraph0(%var0: tensor<?xf32>, %var1: tensor<?xf64>, %const0: i32, %const
     assert constant_vals == [2, 5]
 
 
-@pytest.mark.xfail
-def test_compile_wrapper(ex1):
-    # FIXME: replace this test
-    tbl, (algo0, algo1) = ex1
-    text, wrapper_globals = construct_call_wrapper_text(
-        wrapper_name="subgraph0",
-        symbol_table=tbl,
-        input_keys=["input0", "input1"],
-        execute_keys=["algo0", "algo1"],
-        output_key="algo1",
-    )
-
-    wrapper = compile_wrapper("subgraph0", text, wrapper_globals)
-    for i0, i1 in [(10, 6), (12, 18), (-5, 2)]:
-        assert wrapper(i0, i1) == (((i0 - i1) * 2) + 5)
-
-
 def test_compile_subgraph(dres):
     a = np.arange(100, dtype=np.float32)
     scale_func = dres.algos.testing.scale
@@ -101,14 +84,17 @@ def test_compile_subgraph(dres):
     ret = jit_func()
     np.testing.assert_array_equal(ret, expected)
 
+    # confirm that kwargs are forbidden
+    with pytest.raises(ValueError, match="kwargs"):
+        jit_func(arg=1)
 
-@pytest.mark.xfail
+
 def test_compile_subgraph_with_input(dres):
     # FIXME: replace this test
     from metagraph.plugins.numpy.types import NumpyVectorType
     from metagraph.plugins.graphblas.types import GrblasVectorType
 
-    a = np.arange(100)
+    a = np.arange(100, dtype=np.float32)
     # insert unnecesary translate to create "input" task for later
     a_translate = dres.translate(a, dst_type=GrblasVectorType)
     a_back = dres.translate(a_translate, dst_type=NumpyVectorType)
@@ -134,7 +120,7 @@ def test_compile_subgraph_with_input(dres):
 
 
 def test_compile_subgraph_kwargs_error(dres):
-    a = np.arange(100)
+    a = np.arange(100, dtype=np.float32)
     x = dres.algos.testing.offset(a, offset=4.0)
     compiler = dres.compilers["mlir"]
 
@@ -142,9 +128,8 @@ def test_compile_subgraph_kwargs_error(dres):
         jit_func = compiler.compile_subgraph(x.__dask_graph__(), [], x.key)
 
 
-@pytest.mark.xfail
 def test_compute(dres):
-    a = np.arange(100)
+    a = np.arange(100, dtype=np.float32)
     scale_func = dres.algos.testing.scale
     x = scale_func(a, 2.0)
     y = scale_func(x, 3.0)
