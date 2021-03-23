@@ -72,7 +72,9 @@ if has_mlir_graphblas and has_scipy:
             )
 
         m = ss.csr_matrix(
-            (values, d1_indices, d1_pointers), dtype=values.dtype, shape=x.value.shape,
+            (values, d1_indices, d1_pointers),
+            dtype=values.dtype,
+            shape=x.value.shape,
         )
 
         node_list = np.copy(x.node_list)
