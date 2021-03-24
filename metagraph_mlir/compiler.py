@@ -114,7 +114,9 @@ def construct_call_wrapper_mlir(
 
 class MLIRWrapper:
     def __init__(
-        self, mlir_func: MLIRFunc, const_values: List[Any],
+        self,
+        mlir_func: MLIRFunc,
+        const_values: List[Any],
     ):
         """Python callable that wraps an MLIR function
 
@@ -148,7 +150,11 @@ STANDARD_OPT_PASSES = [
 ]
 
 
-def compile_wrapper(engine, mlir_func: MLIRFunc, constant_vals: List[Any],) -> Callable:
+def compile_wrapper(
+    engine,
+    mlir_func: MLIRFunc,
+    constant_vals: List[Any],
+) -> Callable:
 
     engine.add(mlir_func.mlir, passes=STANDARD_OPT_PASSES)
     mlir_func.callable = engine[mlir_func.name]
@@ -172,7 +178,7 @@ class MLIRCompiler(Compiler):
 
     def compile_algorithm(self, algo, literals):
         """Wrap a single function for JIT compilation and execution.
-        
+
         literals is not used for anything currently
         """
         if not self._initialized:
