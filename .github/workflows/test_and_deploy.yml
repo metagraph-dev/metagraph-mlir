@@ -80,7 +80,7 @@ jobs:
           conda update -q conda
           conda create -n mg python=${{ matrix.pyver }}
           conda activate mg
-          conda update -c ${{ env.CHANNELS }} metagraph-dev
+          conda install -c ${{ env.CHANNELS }} metagraph-dev
           # Install built_package
           BUILT_PKG=`ls ./artifact_storage | head -1`
           conda install ./artifact_storage/$BUILT_PKG
