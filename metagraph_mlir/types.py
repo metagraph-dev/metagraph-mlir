@@ -4,9 +4,9 @@ from metagraph.plugins.core.types import Graph
 from metagraph.plugins.core.wrappers import GraphWrapper
 from .registry import has_mlir_graphblas
 import numpy as np
-from mlir_graphblas.sparse_utils import MLIRSparseTensor
 
 if has_mlir_graphblas:
+    from mlir_graphblas.sparse_utils import MLIRSparseTensor
 
     class MLIRGraphBLASGraph(GraphWrapper, abstract=Graph):
         def __init__(

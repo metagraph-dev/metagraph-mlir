@@ -8,7 +8,6 @@ if has_mlir_graphblas:
     from .types import MLIRGraphBLASGraph
 
 if has_mlir_graphblas and has_scipy:
-
     import scipy.sparse as ss
     from metagraph.plugins.scipy.types import ScipyGraph
 
@@ -17,6 +16,10 @@ if has_mlir_graphblas and has_scipy:
         aprops = ScipyGraph.Type.compute_abstract_properties(
             x, {"node_type", "edge_type", "node_dtype", "edge_dtype", "is_directed"}
         )
+        if aprops["edge_type"] != "map":
+            raise NotImplementedError(
+                f"MLIRGraphBLASGraph requires edge_type=='map', not '{aprops['edge_type']}'"
+            )
         if aprops["edge_type"] == "map" and x.value.dtype not in (
             np.float32,
             np.float64,
