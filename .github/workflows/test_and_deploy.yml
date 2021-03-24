@@ -78,8 +78,9 @@ jobs:
           source "$CONDA/etc/profile.d/conda.sh"
           conda config --set always_yes yes --set changeps1 no
           conda update -q conda
-          conda create -n mg python=${{ matrix.pyver }} pytest coverage pytest-cov
+          conda create -n mg python=${{ matrix.pyver }}
           conda activate mg
+          conda update -c ${{ env.CHANNELS }} metagraph-dev
           # Install built_package
           BUILT_PKG=`ls ./artifact_storage | head -1`
           conda install ./artifact_storage/$BUILT_PKG
@@ -87,7 +88,6 @@ jobs:
           # Install dependencies listed in built package
           # (This is a workaround because conda does not install dependencies for local file installs)
           conda update -c ${{ env.CHANNELS }} metagraph-mlir
-          conda update -c ${{ env.CHANNELS }} metagraph-dev
           conda list
       - name: Pytest
         run: |
