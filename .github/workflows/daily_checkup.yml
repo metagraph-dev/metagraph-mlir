@@ -38,7 +38,7 @@ jobs:
             {
               attachments: [{
                 color: 'danger',
-                text: ':x: Failure\nDaily health check failed for *<https://github.com/metagraph-dev/metagraph-igraph/actions?query=workflow%3A%22Daily+Checkup%22|metagraph-igraph>*'
+                text: ':x: Failure\nDaily health check failed for *<https://github.com/metagraph-dev/metagraph-mlir/actions?query=workflow%3A%22Daily+Checkup%22|metagraph-mlir>*'
               }]
             }
         env:
