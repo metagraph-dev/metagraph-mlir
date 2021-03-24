@@ -87,6 +87,7 @@ jobs:
           # Install dependencies listed in built package
           # (This is a workaround because conda does not install dependencies for local file installs)
           conda update -c ${{ env.CHANNELS }} metagraph-mlir
+          conda update -c ${{ env.CHANNELS }} metagraph-dev
           conda list
       - name: Pytest
         run: |
