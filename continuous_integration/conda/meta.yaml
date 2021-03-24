@@ -19,6 +19,7 @@ requirements:
     - python
     - metagraph >=0.2.4
     - metagraph-numba
+    - mlir-metagraph
 
 test:
   requires:
