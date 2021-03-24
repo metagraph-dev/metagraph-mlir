@@ -9,6 +9,6 @@ setup(
     author="Anaconda, Inc.",
     packages=find_packages(include=["metagraph_mlir", "metagraph_mlir.*"]),
     include_package_data=True,
-    install_requires=["metagraph"],
+    install_requires=["metagraph", "metagraph-numba"],
     entry_points={"metagraph.plugins": "plugins=metagraph_mlir.registry:find_plugins"},
 )

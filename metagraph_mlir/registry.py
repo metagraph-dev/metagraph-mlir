@@ -11,13 +11,12 @@ except ImportError:
 
 from metagraph import PluginRegistry
 
-# Use this as the entry_point object
-registry = PluginRegistry("metagraph_mlir")
-
 
 def find_plugins():
     # Ensure we import all items we want registered
     from . import compiler, translators, types
 
-    registry.register_from_modules(compiler, translators, types)
+    registry = PluginRegistry("metagraph_mlir")
+    registry.register(compiler.MLIRCompiler())
+    registry.register_from_modules(translators, types)
     return registry.plugins

@@ -18,9 +18,14 @@ requirements:
   run:
     - python
     - metagraph >=0.2.4
+    - metagraph-numba
+    - mlir-graphblas
 
 test:
   requires:
+    - pytest
+    - pytest-cov
+    - coverage
     - metagraph-dev
 
   commands:

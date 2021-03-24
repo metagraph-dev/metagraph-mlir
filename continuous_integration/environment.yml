@@ -1,8 +1,8 @@
 name: mg
 
 channels:
-- conda-forge
 - metagraph/label/dev
+- conda-forge
 
 dependencies:
 # dev environment
@@ -14,4 +14,6 @@ dependencies:
 
 # dependencies (so setup.py develop doesn't pip install them)
   - metagraph
+  - metagraph-numba
+  - mlir-graphblas
   
