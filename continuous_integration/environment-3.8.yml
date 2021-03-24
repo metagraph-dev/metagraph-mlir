@@ -1,8 +1,8 @@
 name: mg
 
 channels:
-- conda-forge
 - metagraph/label/dev
+- conda-forge
 
 dependencies:
 # dev environment

@@ -12,7 +12,7 @@ on:
 
 env:
   MAIN_PYVER: 3.8
-  CHANNELS: defaults -c conda-forge -c metagraph/label/dev
+  CHANNELS: defaults -c metagraph/label/dev -c conda-forge 
 
 jobs:
   build:
