@@ -13,22 +13,25 @@ env:
 jobs:
   daily_check:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -l {0}
     steps:
-      - name: Setup conda env
+      - name: Create env
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          auto-update-conda: true
+          python-version: ${{ env.PYVER }}
+      - name: Update env
         run: |
-          source "$CONDA/etc/profile.d/conda.sh"
-          conda config --set always_yes yes --set changeps1 no
-          conda update -q conda
-          conda create -n mg python=${{ env.PYVER }} pytest coverage pytest-cov
-          conda activate mg
           # Install package using latest "dev" versions from metagraph channel
-          conda install -c ${{ env.CHANNELS }} metagraph-mlir
+          conda install -c ${{ env.CHANNELS }} metagraph-mlir metagraph-dev
           conda list
       - name: Pytest
         run: |
-          source "$CONDA/etc/profile.d/conda.sh"
-          conda activate mg
           pytest --pyargs metagraph_mlir
+          python -m metagraph.tests
+          python -m metagraph.tests --dask
       - name: Notify for Failure
         if: failure()
         uses: 8398a7/action-slack@v3
