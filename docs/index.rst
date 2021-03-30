@@ -33,21 +33,11 @@ metagraph channel by conda.
 Implementing Algorithms with metagraph-mlir
 --------------------------------------------
 
-The metagraph-mlir compiler requires that the decorated algorithm function
-return a ``MLIRFunc`` object.  This object contains a number of special
-attributes describing the algorithm, including:
-
-  * ``name``: Name of the entrypoint function.
-  * ``arg_types``: A list of strings containing the MLIR types for each function argument.
-  * ``ret_type``: A string containing the MLIR type of return value
-  * ``mlir``: A bytes object (not string) containing the text of the MLIR code.
-
-To minimize the size of the JIT compiled modules (and to simplify inspection
-of the MLIR after inlining into the generated wrapper function), all MLIR
-functions in the body should be defined as ``private``.
-
-As an example, suppose an abstract algorithm has already been defined to add
-two vectors:
+The metagraph-mlir compiler requires that the concrete algorithm (learn more
+about Metagraph algorithms `here <https://metagraph.readthedocs.io/en/latest/user_guide/algorithms.html>`_) function return a
+``metagraph_mlir.compiler.MLIRFunc`` object with the implementation of the
+algorithm in MLIR.  For example, suppose an abstract algorithm has already
+been defined to add two vectors:
 
 .. code-block:: python
 
@@ -90,6 +80,18 @@ A concrete implementation of this algorithm in MLIR be written this way:
         }
         """,
                 )
+
+This `MLIRFunc` object returned by ``compile_add`` in this example contains a
+number of special attributes describing the function, including:
+
+  * ``name``: Name of the main entry point function.
+  * ``arg_types``: A list of strings containing the MLIR types for each function argument.
+  * ``ret_type``: A string containing the MLIR type of return value
+  * ``mlir``: A bytes object (not string) containing the text of the MLIR code.
+
+To minimize the size of the JIT compiled modules (and to simplify inspection
+of the MLIR after inlining into the generated wrapper function), all MLIR
+functions in the body should be defined as ``private``.
 
 The MLIR functions are JIT compiled using the `JIT engine in mlir-graphblas`_.
 See that documentation for the examples of how to write functions with scalars,
