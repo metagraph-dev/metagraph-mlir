@@ -31,7 +31,7 @@ unreleased LLVM 12.0.  This version is automatically installed from the
 metagraph channel by conda.
 
 Implementing Algorithms with metagraph-mlir
---------------------------------------------
+-------------------------------------------
 
 The metagraph-mlir compiler requires that the concrete algorithm (learn more
 about Metagraph algorithms `here <https://metagraph.readthedocs.io/en/latest/user_guide/algorithms.html>`_) function return a
@@ -98,3 +98,78 @@ See that documentation for the examples of how to write functions with scalars,
 dense tensors, and sparse tensors.
 
 .. _JIT engine in mlir-graphblas: https://mlir-graphblas.readthedocs.io/en/latest/tools/engine.html
+
+
+Translating between ScipyGraph and MLIRGraphBLASGraph
+-----------------------------------------------------
+
+metagraph-mlir currently supports translations between graphs of type ``ScipyGraph`` (provided as a core type in `Metagraph <https://metagraph.readthedocs.io>`_) and ``MLIRGraphBLASGraph`` (provided by metagraph-mlir).
+
+``MLIRGraphBLASGraph`` is an adjacency matrix representation of a graph implemented via MLIR's current sparse tensor support. `This tutorial <https://mlir-graphblas.readthedocs.io/en/latest/tools/engine/spmv.html>`_ provides an overview of how MLIR currently supports sparse tensors. It also shows examples of how to generate an instance of an MLIR sparse tensor. 
+
+``MLIRGraphBLASGraph`` alows us to wrap an MLIR sparse tensor as a graph, e.g. 
+
+.. code-block:: python
+
+    import numpy as np
+    import mlir_graphblas
+    from mlir_graphblas.sparse_utils import MLIRSparseTensor
+    import metagraph as mg
+    
+    # The sparse adjacency matrix below looks like this (where the underscores represent zeros):
+    #
+    # [[ 1.2, ___, ___, ___ ], 
+    #  [ ___, ___, ___, 3.4 ], 
+    #  [ ___, ___, 5.6, ___ ], 
+    #  [ ___, ___, ___, ___ ]]
+    #
+    
+    indices = np.array([
+        [0, 0],
+        [1, 3],
+        [2, 2],
+    ], dtype=np.uint64)
+    values = np.array([1.2, 3.4, 5.6], dtype=np.float32)
+    sizes = np.array([4, 4], dtype=np.uint64)
+    sparsity = np.array([False, True], dtype=np.bool8)
+    
+    sparse_tensor = mlir_graphblas.sparse_utils.MLIRSparseTensor(indices, values, sizes, sparsity)
+    
+    has_weighted_edges = True
+    graph = mg.wrappers.Graph.MLIRGraphBLASGraph(sparse_tensor, has_weighted_edges, aprops={
+        "node_type": "set",
+        "node_dtype": None,
+        "edge_type": "map",
+        "edge_dtype": "float",
+        "is_directed": True,
+    })
+
+We can translate this graph into a ``ScipyGraph`` like so:
+
+.. code-block:: python
+
+    scipy_graph = mg.translate(g, mg.wrappers.Graph.ScipyGraph)
+
+This will allow us verify the following:
+
+.. code-block:: python
+
+    assert np.isclose(
+            scipy_graph.value.toarray(),
+            np.array([
+                [1.2, 0. , 0. , 0. ],
+                [0. , 0. , 0. , 3.4],
+                [0. , 0. , 5.6, 0. ],
+                [0. , 0. , 0. , 0. ]
+            ])).all()
+    
+We can also translate back easily:    
+
+.. code-block:: python
+
+    graph_round_trip = mg.translate(scipy_graph, mg.wrappers.Graph.MLIRGraphBLASGraph)
+
+There are some limitations:
+
+  * Currently, we can only translate from ``MLIRGraphBLASGraph`` to ``ScipyGraph`` if the ``MLIRGraphBLASGraph`` instance's underlying sparse tensor is dense in the first dimension and sparse in the second dimension, i.e. if it is in `CSR format <https://en.wikipedia.org/wiki/Sparse_matrix#Compressed_sparse_row_%28CSR,_CRS_or_Yale_format%29>`_. 
+  * ``MLIRGraphBLASGraph`` currently only supports 32-bit and 64-bit floating point edge weights. Thus, when translating to ``MLIRGraphBLASGraph``, exceptions will be raised if the source type instance has boolean, string, or integer edge weights. 
