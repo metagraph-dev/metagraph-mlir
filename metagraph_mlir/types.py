@@ -47,6 +47,10 @@ if has_mlir_graphblas:
             self.node_list: np.ndarray = node_list
             self.node_vals: np.ndarray = node_vals
 
+        @property
+        def __mlir_sparse__(self):
+            return self.value
+
         class TypeMixin:
             @classmethod
             def _compute_abstract_properties(
