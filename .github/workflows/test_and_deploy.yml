@@ -83,7 +83,7 @@ jobs:
           python-version: ${{ matrix.pyver }}
       - name: Update env
         run: |
-          conda install -c ${{ env.CHANNELS }} metagraph-dev
+          conda install -c ${{ env.CHANNELS }} 'metagraph-dev>=0.2.6'
           # Install built_package
           BUILT_PKG=`ls ./artifact_storage | head -1`
           conda install ./artifact_storage/$BUILT_PKG

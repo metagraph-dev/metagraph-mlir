@@ -11,7 +11,7 @@ dependencies:
   - black
 
 # dependencies (so setup.py develop doesn't pip install them)
-  - metagraph
+  - metagraph>=0.2.6
   - metagraph-numba
   - mlir-graphblas
   
