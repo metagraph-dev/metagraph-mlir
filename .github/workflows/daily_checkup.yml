@@ -25,7 +25,7 @@ jobs:
       - name: Update env
         run: |
           # Install package using latest "dev" versions from metagraph channel
-          conda install -c ${{ env.CHANNELS }} metagraph-mlir metagraph-dev
+          conda install -c ${{ env.CHANNELS }} metagraph-mlir 'metagraph-dev>=0.2.6'
           conda list
       - name: Pytest
         run: |
